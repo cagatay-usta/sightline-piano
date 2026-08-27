@@ -1,14 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { createMidiRouter, findTransportInput } from './transport'
+import { findTransportInput } from './transport'
+import { createMidiDiagnosticBuffer } from './diagnostics'
+import { midiPortName, subscribeMidiInputs, type MidiPortLike } from './inputs'
 
-interface MidiMessageLike extends Event { data: Uint8Array }
-interface MidiPortLike {
-  id: string
-  name?: string | null
-  manufacturer?: string | null
-  state?: 'connected' | 'disconnected'
-  onmidimessage: ((event: MidiMessageLike) => void) | null
-}
 interface MidiAccessLike {
   inputs: Map<string, MidiPortLike>
   onstatechange: ((event: Event) => void) | null
@@ -30,6 +24,9 @@ export function useMidi(onNote: (midi: number) => void, onPlay: () => void) {
   const [transportChoice, setTransportInputId] = useState<string | null>(null)
   const transportInputId = transportChoice === null ? findTransportInput(inputs) : transportChoice
   const [error, setError] = useState<string | null>(null)
+  const [diagnosticBuffer] = useState(createMidiDiagnosticBuffer)
+  const [diagnosticsEnabled, setDiagnosticsEnabled] = useState(false)
+  const [diagnostics, setDiagnostics] = useState(() => diagnosticBuffer.snapshot())
   const accessRef = useRef<MidiAccessLike | null>(null)
   const onNoteRef = useRef(onNote)
   onNoteRef.current = onNote
@@ -41,7 +38,7 @@ export function useMidi(onNote: (midi: number) => void, onPlay: () => void) {
     if (!access) return
     const available = Array.from(access.inputs.values())
       .filter((input) => input.state !== 'disconnected')
-      .map((input) => ({ id: input.id, name: input.name || input.manufacturer || 'MIDI input' }))
+      .map((input) => ({ id: input.id, name: midiPortName(input) }))
     setInputs(available)
     const transportId = findTransportInput(available)
     setSelectedInputId((current) => available.some((item) => item.id === current) ? current
@@ -68,26 +65,39 @@ export function useMidi(onNote: (midi: number) => void, onPlay: () => void) {
 
   useEffect(() => {
     const access = accessRef.current
-    if (!access || !selectedInputId) return
-    const route = createMidiRouter(selectedInputId, transportInputId,
-      (note) => onNoteRef.current(note), () => onPlayRef.current())
-    const subscriptions = [...new Set([selectedInputId, transportInputId])].flatMap((id) => {
-      const input = access.inputs.get(id)
-      if (!input || input.state === 'disconnected') return []
-      const handleMessage = (event: MidiMessageLike) => route(id, event.data, performance.now())
-      input.onmidimessage = handleMessage
-      return [{ input, handleMessage }]
-    })
-    return () => {
-      for (const { input, handleMessage } of subscriptions) {
-        if (input.onmidimessage === handleMessage) input.onmidimessage = null
-      }
-    }
-  }, [selectedInputId, transportInputId, inputs])
+    if (!access) return
+    return subscribeMidiInputs(access.inputs.values(), selectedInputId, transportInputId,
+      (note) => onNoteRef.current(note), () => onPlayRef.current(), () => performance.now(),
+      diagnosticsEnabled ? (input, role, data) => diagnosticBuffer.record(midiPortName(input), role, data, Date.now()) : undefined)
+  }, [selectedInputId, transportInputId, inputs, diagnosticsEnabled, diagnosticBuffer])
+
+  // Batch UI updates; MIDI clock traffic must not trigger a render for every byte.
+  useEffect(() => {
+    if (!diagnosticsEnabled) return
+    const timer = window.setInterval(() => {
+      const snapshot = diagnosticBuffer.snapshot()
+      setDiagnostics((current) => current.received === snapshot.received ? current : snapshot)
+    }, 200)
+    return () => window.clearInterval(timer)
+  }, [diagnosticsEnabled, diagnosticBuffer])
+
+  const clearDiagnostics = useCallback(() => {
+    diagnosticBuffer.clear()
+    setDiagnostics(diagnosticBuffer.snapshot())
+  }, [diagnosticBuffer])
+  const startDiagnostics = useCallback(() => {
+    clearDiagnostics()
+    setDiagnosticsEnabled(true)
+  }, [clearDiagnostics])
+  const stopDiagnostics = useCallback(() => {
+    setDiagnosticsEnabled(false)
+    setDiagnostics(diagnosticBuffer.snapshot())
+  }, [diagnosticBuffer])
 
   useEffect(() => () => {
     if (accessRef.current) accessRef.current.onstatechange = null
   }, [])
 
-  return { supported, status, inputs, selectedInputId, setSelectedInputId, transportInputId, setTransportInputId, error, connect }
+  return { supported, status, inputs, selectedInputId, setSelectedInputId, transportInputId, setTransportInputId, error, connect,
+    diagnosticsEnabled, diagnostics, startDiagnostics, stopDiagnostics, clearDiagnostics }
 }

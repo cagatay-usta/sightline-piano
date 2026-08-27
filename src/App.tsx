@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Notation } from './components/Notation'
 import { MasteryDashboard } from './components/MasteryDashboard'
+import { MidiDiagnostics } from './components/MidiDiagnostics'
 import { accuracy, averagePhraseTime, createExercise, presentExercise } from './exercise/exercise'
 import { attemptPractice, seededRandom, startPractice } from './exercise/practice'
 import { handlePhraseShortcut } from './exercise/shortcuts'
@@ -195,6 +196,10 @@ export default function App() {
               </>
             )}
           </div>
+          <MidiDiagnostics available={midi.inputs.length > 0} recording={midi.diagnosticsEnabled} snapshot={midi.diagnostics}
+            context={{ pianoInput: midi.inputs.find((input) => input.id === midi.selectedInputId)?.name ?? 'None',
+              playInput: midi.inputs.find((input) => input.id === midi.transportInputId)?.name ?? 'None', inputs: midi.inputs.map((input) => input.name) }}
+            onStart={midi.startDiagnostics} onStop={midi.stopDiagnostics} onClear={midi.clearDiagnostics} />
           <details className="practice-input">
             <summary>Practice without a MIDI keyboard</summary>
             <p>Test keys use the same scoring and saved progress as MIDI. For physical keyboard learning, use your MIDI controller.</p>

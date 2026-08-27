@@ -60,6 +60,14 @@ For the KeyLab Essential Mk3, keep the regular **MIDI** port selected for piano 
 
 Supported messages are MIDI Start/Continue and MCU Play (note 94 on the selected transport port). Releases, held MCU presses, clock, and Stop do not advance; duplicate transport signals within 150 ms are coalesced. Ordinary note 94 on a separate piano port is still evaluated as a note. Custom CC mappings, HUI, and SysEx/MMC are not supported; no extra SysEx permission is requested.
 
+### Debugging a controller button
+
+Expand **MIDI diagnostics** below the MIDI setup. Connect MIDI, click **Start MIDI log**, press and release the controller's Play button once, then click **Stop MIDI log** and **Copy log**. If clipboard access is unavailable, select and copy the read-only text manually. A new capture clears the previous log.
+
+Recording listens to **all connected inputs**, including unselected ALV/DINTHRU/MCU ports. It pauses MIDI scoring and transport actions so diagnostic presses cannot alter mastery. After stopping, normal routing resumes; restart the phrase to avoid including diagnostic time in your next response. Manual test keys and Space retain their normal behavior.
+
+The report includes current selected ports, the source port and selected role for each message, timestamps, hex bytes, and decoded notes/CC/transport. Clock and active-sensing messages are counted but hidden. Only the latest 100 non-heartbeat messages are retained (up to 64 bytes each), with UI updates batched every 200 ms. Logs are memory-only, never persisted or sent automatically. No SysEx permission is requested, so SysEx-only controls will not be visible. If Play produces no entries, try a piano key as a connectivity check and include the report's selected-port header when reporting the issue.
+
 ## Timing and mastery
 
 - Timing starts after the staff is drawn, including for the first note. After a correct note, timing for the next starts immediately.
