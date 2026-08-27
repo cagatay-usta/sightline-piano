@@ -2,6 +2,13 @@ import { parseMidiNoteOn } from './midi'
 
 export interface NamedMidiInput { id: string; name: string }
 
+/** The CC21 mapping was observed on this controller's regular MIDI port.
+ * Do not interpret an unrelated device's CC21 knob as a Play button.
+ */
+export function supportsKeylabCcPlay(inputName: string): boolean {
+  return /\b(?:KL|KeyLab) Essential \d+ mk3 MIDI\b/i.test(inputName)
+}
+
 /** Only auto-select an unambiguous control-surface port; never reserve a piano key. */
 export function findTransportInput(inputs: readonly NamedMidiInput[]): string {
   const candidates = inputs.filter((input) => /\b(MCU|DAW)\b|\bMIDIIN2\b/i.test(input.name))
@@ -14,11 +21,13 @@ export function createMidiRouter(
   transportInputId: string,
   onNote: (note: number) => void,
   onPlay: () => void,
+  options: { keylabCcPlay?: boolean } = {},
 ) {
   let playHeld = false
+  let ccPlayHeld = false
   let lastPlayAt = -Infinity
   const play = (now: number) => {
-    // Some controllers emit both Start and MCU Play for the same press.
+    // A controller may emit multiple supported transport messages per press.
     if (now - lastPlayAt < 150) return
     lastPlayAt = now
     onPlay()
@@ -27,6 +36,16 @@ export function createMidiRouter(
     const noteInput = inputId === noteInputId
     const transportInput = Boolean(transportInputId) && inputId === transportInputId
     if (!noteInput && !transportInput) return
+    // Captured KeyLab Play: B0 15 7F (press), B0 15 00 (release).
+    // Channel, controller, values, device family, and input port are deliberate.
+    if (options.keylabCcPlay && noteInput && data.length === 3 && data[0] === 0xb0 && data[1] === 21) {
+      if (data[2] === 0) ccPlayHeld = false
+      else if (data[2] === 127) {
+        if (!ccPlayHeld) play(now)
+        ccPlayHeld = true
+      }
+      return
+    }
     if (data.length === 1 && (data[0] === 0xfa || data[0] === 0xfb)) {
       play(now)
       return

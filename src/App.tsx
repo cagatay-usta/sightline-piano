@@ -187,10 +187,10 @@ export default function App() {
                 {midi.inputs.length > 0 && <label>MIDI input<select value={midi.selectedInputId} onChange={(event) => midi.setSelectedInputId(event.target.value)}>{midi.inputs.map((input) => <option key={input.id} value={input.id}>{input.name}</option>)}</select></label>}
                 {midi.inputs.length > 0 && <>
                   <label>Play button input (MCU)<select value={midi.transportInputId} onChange={(event) => midi.setTransportInputId(event.target.value)}>
-                    <option value="">None — MIDI Start/Continue still works</option>
+                    <option value="">None — no separate MCU port</option>
                     {midi.inputs.map((input) => <option key={input.id} value={input.id}>{input.name}</option>)}
                   </select></label>
-                  <p className="section-help">For KeyLab, use the MCU/HUI port here and MCU transport mode on the controller. Keep the regular MIDI port selected above for piano keys.</p>
+                  <p className="section-help">KeyLab Essential mk3 Play (CC21, channel 1) works through the regular MIDI input above. No controller mode change is needed for that mapping. This optional MCU/HUI port is for MCU transport; MIDI Start/Continue is also supported.</p>
                 </>}
                 {midi.error && <p className="inline-error" role="alert">Could not connect to MIDI: {midi.error}</p>}
               </>

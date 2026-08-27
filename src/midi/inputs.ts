@@ -1,4 +1,4 @@
-import { createMidiRouter } from './transport'
+import { createMidiRouter, supportsKeylabCcPlay } from './transport'
 
 export interface MidiMessageLike { data: Uint8Array }
 export interface MidiPortLike {
@@ -19,8 +19,11 @@ export function subscribeMidiInputs(
   onNote: (note: number) => void, onPlay: () => void, now: () => number,
   diagnostic?: (input: MidiPortLike, role: string, data: Uint8Array) => void,
 ): () => void {
-  const route = createMidiRouter(noteInputId, transportInputId, onNote, onPlay)
-  const subscriptions = [...ports].filter((input) => input.state !== 'disconnected' &&
+  const available = [...ports]
+  const pianoInput = available.find((input) => input.id === noteInputId)
+  const route = createMidiRouter(noteInputId, transportInputId, onNote, onPlay,
+    { keylabCcPlay: supportsKeylabCcPlay(pianoInput?.name ?? '') })
+  const subscriptions = available.filter((input) => input.state !== 'disconnected' &&
     (diagnostic || input.id === noteInputId || input.id === transportInputId)).map((input) => {
     const role = [input.id === noteInputId ? 'piano input' : '', input.id === transportInputId ? 'Play input' : ''].filter(Boolean).join(' + ') || 'monitor only'
     const handleMessage = (event: MidiMessageLike) => {

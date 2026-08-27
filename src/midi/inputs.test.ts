@@ -8,6 +8,41 @@ function port(id: string, state: 'connected' | 'disconnected' = 'connected'): Mi
 function send(input: MidiPortLike, data: number[]) { input.onmidimessage?.({ data: new Uint8Array(data) }) }
 
 describe('MIDI subscriptions', () => {
+  it('replays the captured KeyLab sequence: four piano notes and three Play presses', () => {
+    const keys = port('KL Essential 61 mk3 MIDI'), control = port('KL Essential 61 mk3 MCU/HUI')
+    const note = vi.fn(), play = vi.fn()
+    let time = 0
+    const cleanup = subscribeMidiInputs([keys, control], keys.id, control.id, note, play, () => time)
+    const capture: Array<[number, number[]]> = [
+      [0, [0x90, 0x41, 0x46]], [343, [0x90, 0x43, 0x54]],
+      [416, [0x80, 0x41, 0]], [655, [0x80, 0x43, 0]],
+      [669, [0x90, 0x45, 0x4c]], [983, [0x90, 0x47, 0x3e]],
+      [1006, [0x80, 0x45, 0]], [1229, [0x80, 0x47, 0]],
+      [5031, [0xb0, 0x15, 0x7f]], [5302, [0xb0, 0x15, 0]],
+      [10766, [0xb0, 0x15, 0x7f]], [10899, [0xb0, 0x15, 0]],
+      [12299, [0xb0, 0x15, 0x7f]], [12423, [0xb0, 0x15, 0]],
+    ]
+    for (const [at, data] of capture) { time = at; send(keys, data) }
+    expect(note.mock.calls).toEqual([[65], [67], [69], [71]])
+    expect(play).toHaveBeenCalledTimes(3)
+    cleanup()
+  })
+
+  it('supports KeyLab CC Play without a separate MCU port, but not during diagnostics', () => {
+    const keys = port('KL Essential 61 mk3 MIDI'), note = vi.fn(), play = vi.fn(), diagnostic = vi.fn()
+    const stop = subscribeMidiInputs([keys], keys.id, '', note, play, () => 0, diagnostic)
+    send(keys, [0xb0, 21, 127])
+    send(keys, [0xb0, 21, 0])
+    expect(diagnostic).toHaveBeenCalledTimes(2)
+    expect(play).not.toHaveBeenCalled()
+    stop()
+    const cleanup = subscribeMidiInputs([keys], keys.id, '', note, play, () => 1000)
+    send(keys, [0xb0, 21, 127])
+    expect(play).toHaveBeenCalledOnce()
+    expect(note).not.toHaveBeenCalled()
+    cleanup()
+  })
+
   it('normally subscribes only to the chosen piano/Play ports and cleans up', () => {
     const keys = port('MIDI'), control = port('MCU/HUI'), alv = port('ALV')
     const note = vi.fn(), play = vi.fn()
