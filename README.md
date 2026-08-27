@@ -52,6 +52,14 @@ Unseen and zero-error notes have weight 1. The evidence factor limits the effect
 
 Changing difficulty, clef, phrase length, or adaptation starts a new phrase. **Next phrase** skips to a fresh phrase; **Restart phrase** keeps the notes and restarts timing. Both retain attempts already recorded.
 
+### Hands-free next phrase
+
+Press the controller's **Play** button or press **Space** in the page to generate the next phrase, even mid-phrase. Both use the same action as **Next phrase**, preserving recorded attempts. Space does not hijack buttons, dropdowns, text fields, or other interactive controls; click the staff first if needed. Holding Space does not skip repeatedly. Shortcuts are blocked while the reset confirmation is open.
+
+For the KeyLab Essential Mk3, keep the regular **MIDI** port selected for piano keys. The app automatically selects a single clearly named MCU/DAW transport port; if needed, choose the controller's **MCU/HUI** port under **Play button input (MCU)**. Set the controller's transport mode to **MCU**, not HUI/Both, as described in [Arturia's transport setup](https://support.arturia.com/hc/en-us/articles/8905862388508-KeyLab-Essential-mk3-DAW-Integration). Manual port choices last until reload; automatic detection runs again on connection.
+
+Supported messages are MIDI Start/Continue and MCU Play (note 94 on the selected transport port). Releases, held MCU presses, clock, and Stop do not advance; duplicate transport signals within 150 ms are coalesced. Ordinary note 94 on a separate piano port is still evaluated as a note. Custom CC mappings, HUI, and SysEx/MMC are not supported; no extra SysEx permission is requested.
+
 ## Timing and mastery
 
 - Timing starts after the staff is drawn, including for the first note. After a correct note, timing for the next starts immediately.

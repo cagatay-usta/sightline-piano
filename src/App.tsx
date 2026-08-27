@@ -3,6 +3,7 @@ import { Notation } from './components/Notation'
 import { MasteryDashboard } from './components/MasteryDashboard'
 import { accuracy, averagePhraseTime, createExercise, presentExercise } from './exercise/exercise'
 import { attemptPractice, seededRandom, startPractice } from './exercise/practice'
+import { handlePhraseShortcut } from './exercise/shortcuts'
 import type { PerformanceEvent } from './exercise/performance'
 import { DIFFICULTY_PROFILES, getDifficulty, isDifficultyId } from './music/difficulty'
 import { pitchLabel } from './music/pitches'
@@ -38,7 +39,6 @@ export default function App() {
     setClock(now)
   }, [resetOpen])
   const submitMidi = useCallback((note: number) => submitNote(note, 'midi'), [submitNote])
-  const midi = useMidi(submitMidi)
 
   const onNotationReady = useCallback(() => {
     const id = phrase.id
@@ -49,14 +49,31 @@ export default function App() {
     })
   }, [phrase.id])
 
-  const nextPhrase = (changes: Partial<ProgressPreferences> = {}) => {
+  const nextPhrase = useCallback((changes: Partial<ProgressPreferences> = {}) => {
     const id = nextPhraseId()
     const seed = randomSeed()
     setPractice((current) => startPractice(
       { ...current.preferences, ...changes }, current.mastery, id, seededRandom(seed), current.stats,
     ))
     setResetMessage('')
-  }
+  }, [])
+
+  const nextPhraseFromTransport = useCallback(() => {
+    if (!resetOpen) nextPhrase()
+  }, [nextPhrase, resetOpen])
+  const midi = useMidi(submitMidi, nextPhraseFromTransport)
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target
+      const interactive = target instanceof Element && Boolean(target.closest(
+        'input, select, textarea, button, a, summary, [contenteditable]:not([contenteditable="false"]), [role="button"], [role="textbox"], [role="dialog"], [role="alertdialog"]',
+      ))
+      handlePhraseShortcut(event, resetOpen, interactive, nextPhrase)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [nextPhrase, resetOpen])
 
   const restartPhrase = () => {
     const id = nextPhraseId()
@@ -134,7 +151,7 @@ export default function App() {
             <button className="primary-button" type="button" onClick={() => nextPhrase()}>Next phrase</button>
           </div>
         </div>
-        <p className="timing-help">Response timing starts when the staff appears. Connect your keyboard first, or restart when ready. No rhythm scoring.</p>
+        <p className="timing-help">Next phrase: controller Play or Space outside controls. Response timing starts when the staff appears. Connect your keyboard first, or restart when ready. No rhythm scoring.</p>
       </section>
 
       <div className="lower-grid">
@@ -167,6 +184,13 @@ export default function App() {
                   {midi.status === 'no-inputs' && <span>No MIDI inputs found. Connect a keyboard, then refresh.</span>}
                 </div>
                 {midi.inputs.length > 0 && <label>MIDI input<select value={midi.selectedInputId} onChange={(event) => midi.setSelectedInputId(event.target.value)}>{midi.inputs.map((input) => <option key={input.id} value={input.id}>{input.name}</option>)}</select></label>}
+                {midi.inputs.length > 0 && <>
+                  <label>Play button input (MCU)<select value={midi.transportInputId} onChange={(event) => midi.setTransportInputId(event.target.value)}>
+                    <option value="">None — MIDI Start/Continue still works</option>
+                    {midi.inputs.map((input) => <option key={input.id} value={input.id}>{input.name}</option>)}
+                  </select></label>
+                  <p className="section-help">For KeyLab, use the MCU/HUI port here and MCU transport mode on the controller. Keep the regular MIDI port selected above for piano keys.</p>
+                </>}
                 {midi.error && <p className="inline-error" role="alert">Could not connect to MIDI: {midi.error}</p>}
               </>
             )}

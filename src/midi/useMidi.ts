@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { parseMidiNoteOn } from './midi'
+import { createMidiRouter, findTransportInput } from './transport'
 
 interface MidiMessageLike extends Event { data: Uint8Array }
 interface MidiPortLike {
@@ -21,15 +21,20 @@ type MidiNavigator = Navigator & {
   requestMIDIAccess?: () => Promise<MidiAccessLike>
 }
 
-export function useMidi(onNote: (midi: number) => void) {
+export function useMidi(onNote: (midi: number) => void, onPlay: () => void) {
   const supported = typeof navigator !== 'undefined' && 'requestMIDIAccess' in navigator
   const [status, setStatus] = useState<MidiConnectionStatus>(supported ? 'idle' : 'unsupported')
   const [inputs, setInputs] = useState<MidiInputOption[]>([])
   const [selectedInputId, setSelectedInputId] = useState('')
+  // null means automatic detection; empty string explicitly disables MCU routing.
+  const [transportChoice, setTransportInputId] = useState<string | null>(null)
+  const transportInputId = transportChoice === null ? findTransportInput(inputs) : transportChoice
   const [error, setError] = useState<string | null>(null)
   const accessRef = useRef<MidiAccessLike | null>(null)
   const onNoteRef = useRef(onNote)
   onNoteRef.current = onNote
+  const onPlayRef = useRef(onPlay)
+  onPlayRef.current = onPlay
 
   const refreshInputs = useCallback(() => {
     const access = accessRef.current
@@ -38,7 +43,10 @@ export function useMidi(onNote: (midi: number) => void) {
       .filter((input) => input.state !== 'disconnected')
       .map((input) => ({ id: input.id, name: input.name || input.manufacturer || 'MIDI input' }))
     setInputs(available)
-    setSelectedInputId((current) => available.some((item) => item.id === current) ? current : (available[0]?.id ?? ''))
+    const transportId = findTransportInput(available)
+    setSelectedInputId((current) => available.some((item) => item.id === current) ? current
+      : (available.find((item) => item.id !== transportId)?.id ?? available[0]?.id ?? ''))
+    setTransportInputId((current) => current && !available.some((item) => item.id === current) ? null : current)
     setStatus(available.length > 0 ? 'connected' : 'no-inputs')
   }, [])
 
@@ -61,24 +69,25 @@ export function useMidi(onNote: (midi: number) => void) {
   useEffect(() => {
     const access = accessRef.current
     if (!access || !selectedInputId) return
-    const input = access.inputs.get(selectedInputId)
-    if (!input) {
-      refreshInputs()
-      return
-    }
-    const handleMessage = (event: MidiMessageLike) => {
-      const note = parseMidiNoteOn(event.data)
-      if (note !== null) onNoteRef.current(note)
-    }
-    input.onmidimessage = handleMessage
+    const route = createMidiRouter(selectedInputId, transportInputId,
+      (note) => onNoteRef.current(note), () => onPlayRef.current())
+    const subscriptions = [...new Set([selectedInputId, transportInputId])].flatMap((id) => {
+      const input = access.inputs.get(id)
+      if (!input || input.state === 'disconnected') return []
+      const handleMessage = (event: MidiMessageLike) => route(id, event.data, performance.now())
+      input.onmidimessage = handleMessage
+      return [{ input, handleMessage }]
+    })
     return () => {
-      if (input.onmidimessage === handleMessage) input.onmidimessage = null
+      for (const { input, handleMessage } of subscriptions) {
+        if (input.onmidimessage === handleMessage) input.onmidimessage = null
+      }
     }
-  }, [selectedInputId, inputs, refreshInputs])
+  }, [selectedInputId, transportInputId, inputs])
 
   useEffect(() => () => {
     if (accessRef.current) accessRef.current.onstatechange = null
   }, [])
 
-  return { supported, status, inputs, selectedInputId, setSelectedInputId, error, connect }
+  return { supported, status, inputs, selectedInputId, setSelectedInputId, transportInputId, setTransportInputId, error, connect }
 }
