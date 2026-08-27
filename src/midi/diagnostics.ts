@@ -19,8 +19,7 @@ export function describeMidiMessage(data: ArrayLike<number>): string {
   if (data.length === 3 && (status & 0xf0) === 0xb0) return `CC ch ${channel}, controller ${data[1]}, value ${data[2]}`
   if (data.length === 3 && ((status & 0xf0) === 0x90 || (status & 0xf0) === 0x80)) {
     const on = (status & 0xf0) === 0x90 && data[2] !== 0
-    const candidate = data[1] === 94 ? ' (MCU Play candidate on transport port)' : ''
-    return `Note ${on ? 'on' : 'off'} ch ${channel}, note ${data[1]}, velocity ${data[2]}${candidate}`
+    return `Note ${on ? 'on' : 'off'} ch ${channel}, note ${data[1]}, velocity ${data[2]}`
   }
   return status === 0xf0 ? 'System exclusive' : 'Other MIDI message'
 }
@@ -52,14 +51,13 @@ export function createMidiDiagnosticBuffer() {
 
 export interface MidiDiagnosticContext {
   readonly pianoInput: string
-  readonly playInput: string
   readonly inputs: readonly string[]
 }
 
 export function formatMidiDiagnosticLog(snapshot: MidiDiagnosticSnapshot, context?: MidiDiagnosticContext): string {
   return [
     'Sightline MIDI diagnostic capture (practice MIDI actions paused while recording)',
-    ...(context ? [`Current piano input: ${context.pianoInput}`, `Current Play input: ${context.playInput}`, `Connected inputs: ${context.inputs.join(' / ') || 'None'}`] : []),
+    ...(context ? [`Current piano input: ${context.pianoInput}`, `Connected inputs: ${context.inputs.join(' / ') || 'None'}`] : []),
     `Received: ${snapshot.received}; hidden clock/active sensing: ${snapshot.hidden}; older entries dropped: ${snapshot.discarded}`,
     'Time | Input port | Selected role at capture | Hex bytes | Decoded message',
     ...snapshot.lines,

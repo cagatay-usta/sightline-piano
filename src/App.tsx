@@ -185,20 +185,14 @@ export default function App() {
                   {midi.status === 'no-inputs' && <span>No MIDI inputs found. Connect a keyboard, then refresh.</span>}
                 </div>
                 {midi.inputs.length > 0 && <label>MIDI input<select value={midi.selectedInputId} onChange={(event) => midi.setSelectedInputId(event.target.value)}>{midi.inputs.map((input) => <option key={input.id} value={input.id}>{input.name}</option>)}</select></label>}
-                {midi.inputs.length > 0 && <>
-                  <label>Play button input (MCU)<select value={midi.transportInputId} onChange={(event) => midi.setTransportInputId(event.target.value)}>
-                    <option value="">None — no separate MCU port</option>
-                    {midi.inputs.map((input) => <option key={input.id} value={input.id}>{input.name}</option>)}
-                  </select></label>
-                  <p className="section-help">KeyLab Essential mk3 Play (CC21, channel 1) works through the regular MIDI input above. No controller mode change is needed for that mapping. This optional MCU/HUI port is for MCU transport; MIDI Start/Continue is also supported.</p>
-                </>}
+                {midi.inputs.length > 0 && <p className="section-help">KeyLab Essential mk3 piano keys and Play (CC21, channel 1) use the same regular MIDI input. No separate Play port or controller mode change is needed.</p>}
                 {midi.error && <p className="inline-error" role="alert">Could not connect to MIDI: {midi.error}</p>}
               </>
             )}
           </div>
           <MidiDiagnostics available={midi.inputs.length > 0} recording={midi.diagnosticsEnabled} snapshot={midi.diagnostics}
             context={{ pianoInput: midi.inputs.find((input) => input.id === midi.selectedInputId)?.name ?? 'None',
-              playInput: midi.inputs.find((input) => input.id === midi.transportInputId)?.name ?? 'None', inputs: midi.inputs.map((input) => input.name) }}
+              inputs: midi.inputs.map((input) => input.name) }}
             onStart={midi.startDiagnostics} onStop={midi.stopDiagnostics} onClear={midi.clearDiagnostics} />
           <details className="practice-input">
             <summary>Practice without a MIDI keyboard</summary>

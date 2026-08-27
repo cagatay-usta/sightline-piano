@@ -4,14 +4,14 @@ import { createMidiDiagnosticBuffer, describeMidiMessage, formatMidiDiagnosticLo
 describe('MIDI diagnostics', () => {
   it('preserves port, selected role, timestamp, raw bytes, and decoded press/release', () => {
     const buffer = createMidiDiagnosticBuffer()
-    buffer.record('KL Essential 61 mk3 MCU/HUI', 'Play input', [0x90, 94, 127], 0)
-    buffer.record('KL Essential 61 mk3 MCU/HUI', 'Play input', [0x90, 94, 0], 1)
-    const report = formatMidiDiagnosticLog(buffer.snapshot(), { pianoInput: 'MIDI', playInput: 'MCU/HUI', inputs: ['ALV', 'MIDI', 'DINTHRU', 'MCU/HUI'] })
-    expect(report).toContain('1970-01-01T00:00:00.000Z | KL Essential 61 mk3 MCU/HUI | Play input | 90 5E 7F')
-    expect(report).toContain('Note on ch 1, note 94, velocity 127')
-    expect(report).toContain('Note off ch 1, note 94, velocity 0')
+    buffer.record('KL Essential 61 mk3 MIDI', 'piano input', [0xb0, 21, 127], 0)
+    buffer.record('KL Essential 61 mk3 MIDI', 'piano input', [0xb0, 21, 0], 1)
+    const report = formatMidiDiagnosticLog(buffer.snapshot(), { pianoInput: 'MIDI', inputs: ['ALV', 'MIDI', 'DINTHRU', 'MCU/HUI'] })
+    expect(report).toContain('1970-01-01T00:00:00.000Z | KL Essential 61 mk3 MIDI | piano input | B0 15 7F')
+    expect(report).toContain('CC ch 1, controller 21, value 127')
+    expect(report).toContain('CC ch 1, controller 21, value 0')
     expect(report).toContain('Current piano input: MIDI')
-    expect(report).toContain('Current Play input: MCU/HUI')
+    expect(report).not.toContain('Current Play input:')
     expect(report).toContain('Connected inputs: ALV / MIDI / DINTHRU / MCU/HUI')
   })
 
@@ -22,11 +22,13 @@ describe('MIDI diagnostics', () => {
     expect(describeMidiMessage([0xfc])).toBe('Stop')
     expect(describeMidiMessage([0xe0, 0, 64])).toBe('Other MIDI message')
     expect(describeMidiMessage([])).toBe('Empty message')
+    expect(describeMidiMessage([0x90, 94, 127])).toBe('Note on ch 1, note 94, velocity 127')
+    expect(describeMidiMessage([0x90, 94, 0])).toBe('Note off ch 1, note 94, velocity 0')
   })
 
   it('counts heartbeat traffic without letting it crowd out Play events', () => {
     const buffer = createMidiDiagnosticBuffer()
-    buffer.record('MCU', 'Play input', [0x90, 94, 127], 0)
+    buffer.record('MIDI', 'piano input', [0xb0, 21, 127], 0)
     for (let i = 0; i < 500; i++) {
       buffer.record('MIDI', 'piano input', [0xf8], i)
       buffer.record('MIDI', 'piano input', [0xfe], i)

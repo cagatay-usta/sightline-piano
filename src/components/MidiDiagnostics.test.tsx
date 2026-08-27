@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { MidiDiagnostics } from './MidiDiagnostics'
 import { createMidiDiagnosticBuffer } from '../midi/diagnostics'
 
-const props = { context: { pianoInput: 'MIDI', playInput: 'MCU/HUI', inputs: ['ALV', 'MIDI', 'MCU/HUI'] }, onStart() {}, onStop() {}, onClear() {} }
+const props = { context: { pianoInput: 'MIDI', inputs: ['ALV', 'MIDI', 'MCU/HUI'] }, onStart() {}, onStop() {}, onClear() {} }
 
 describe('MIDI diagnostics panel', () => {
   it('explains how to capture messages and makes an empty log manually copyable', () => {
@@ -11,7 +11,8 @@ describe('MIDI diagnostics panel', () => {
     expect(html).toContain('Connect a MIDI controller')
     expect(html).toContain('disabled="">Start MIDI log')
     expect(html).toContain('textarea readOnly=""')
-    expect(html).toContain('Current Play input: MCU/HUI')
+    expect(html).toContain('Current piano input: MIDI')
+    expect(html).not.toContain('Current Play input:')
     expect(html).toContain('No non-heartbeat MIDI messages')
   })
   it('shows recording status, bounded decoded data, and the practice pause warning', () => {

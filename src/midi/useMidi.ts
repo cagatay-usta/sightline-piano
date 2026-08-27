@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { findTransportInput } from './transport'
 import { createMidiDiagnosticBuffer } from './diagnostics'
-import { midiPortName, subscribeMidiInputs, type MidiPortLike } from './inputs'
+import { midiPortName, selectMidiInput, subscribeMidiInputs, type MidiPortLike } from './inputs'
 
 interface MidiAccessLike {
   inputs: Map<string, MidiPortLike>
@@ -20,9 +19,6 @@ export function useMidi(onNote: (midi: number) => void, onPlay: () => void) {
   const [status, setStatus] = useState<MidiConnectionStatus>(supported ? 'idle' : 'unsupported')
   const [inputs, setInputs] = useState<MidiInputOption[]>([])
   const [selectedInputId, setSelectedInputId] = useState('')
-  // null means automatic detection; empty string explicitly disables MCU routing.
-  const [transportChoice, setTransportInputId] = useState<string | null>(null)
-  const transportInputId = transportChoice === null ? findTransportInput(inputs) : transportChoice
   const [error, setError] = useState<string | null>(null)
   const [diagnosticBuffer] = useState(createMidiDiagnosticBuffer)
   const [diagnosticsEnabled, setDiagnosticsEnabled] = useState(false)
@@ -40,10 +36,7 @@ export function useMidi(onNote: (midi: number) => void, onPlay: () => void) {
       .filter((input) => input.state !== 'disconnected')
       .map((input) => ({ id: input.id, name: midiPortName(input) }))
     setInputs(available)
-    const transportId = findTransportInput(available)
-    setSelectedInputId((current) => available.some((item) => item.id === current) ? current
-      : (available.find((item) => item.id !== transportId)?.id ?? available[0]?.id ?? ''))
-    setTransportInputId((current) => current && !available.some((item) => item.id === current) ? null : current)
+    setSelectedInputId((current) => selectMidiInput(available, current))
     setStatus(available.length > 0 ? 'connected' : 'no-inputs')
   }, [])
 
@@ -66,10 +59,10 @@ export function useMidi(onNote: (midi: number) => void, onPlay: () => void) {
   useEffect(() => {
     const access = accessRef.current
     if (!access) return
-    return subscribeMidiInputs(access.inputs.values(), selectedInputId, transportInputId,
+    return subscribeMidiInputs(access.inputs.values(), selectedInputId,
       (note) => onNoteRef.current(note), () => onPlayRef.current(), () => performance.now(),
       diagnosticsEnabled ? (input, role, data) => diagnosticBuffer.record(midiPortName(input), role, data, Date.now()) : undefined)
-  }, [selectedInputId, transportInputId, inputs, diagnosticsEnabled, diagnosticBuffer])
+  }, [selectedInputId, inputs, diagnosticsEnabled, diagnosticBuffer])
 
   // Batch UI updates; MIDI clock traffic must not trigger a render for every byte.
   useEffect(() => {
@@ -98,6 +91,6 @@ export function useMidi(onNote: (midi: number) => void, onPlay: () => void) {
     if (accessRef.current) accessRef.current.onstatechange = null
   }, [])
 
-  return { supported, status, inputs, selectedInputId, setSelectedInputId, transportInputId, setTransportInputId, error, connect,
+  return { supported, status, inputs, selectedInputId, setSelectedInputId, error, connect,
     diagnosticsEnabled, diagnostics, startDiagnostics, stopDiagnostics, clearDiagnostics }
 }
