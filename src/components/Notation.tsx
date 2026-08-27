@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Annotation, Formatter, Renderer, Stave, StaveNote, Voice } from 'vexflow'
 import type { Phrase } from '../music/generatePhrase'
 import type { Clef } from '../music/pitches'
+import { pitchLabel } from '../music/pitches'
 
 interface NotationProps {
   phrase: Phrase
@@ -9,9 +10,10 @@ interface NotationProps {
   currentIndex: number
   complete: boolean
   feedback: 'idle' | 'correct' | 'incorrect'
+  onReady: () => void
 }
 
-export function Notation({ phrase, clef, currentIndex, complete, feedback }: NotationProps) {
+export function Notation({ phrase, clef, currentIndex, complete, feedback, onReady }: NotationProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const [renderError, setRenderError] = useState(false)
 
@@ -48,6 +50,7 @@ export function Notation({ phrase, clef, currentIndex, complete, feedback }: Not
         const voice = new Voice({ numBeats: phrase.length, beatValue: 4 }).addTickables(notes)
         new Formatter().joinVoices([voice]).format([voice], width - 145)
         voice.draw(context, stave)
+        onReady()
       } catch (error) {
         console.error('Notation rendering failed', error)
         host.replaceChildren()
@@ -59,11 +62,11 @@ export function Notation({ phrase, clef, currentIndex, complete, feedback }: Not
     const observer = new ResizeObserver(draw)
     observer.observe(host)
     return () => observer.disconnect()
-  }, [phrase, clef, currentIndex, complete, feedback])
+  }, [phrase, clef, currentIndex, complete, feedback, onReady])
 
   return (
     <div className="notation-frame">
-      <div ref={hostRef} className="notation-canvas" aria-label={`${clef} clef phrase with ${phrase.length} quarter notes`} />
+      <div ref={hostRef} className="notation-canvas" role="img" aria-label={`${clef} clef phrase: ${phrase.map(pitchLabel).join(', ')}. ${complete ? 'Complete.' : `Current position ${currentIndex + 1} of ${phrase.length}.`}`} />
       {renderError && <p className="inline-error" role="alert">The staff could not be drawn. Generate a new phrase to try again.</p>}
     </div>
   )

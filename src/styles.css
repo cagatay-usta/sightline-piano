@@ -66,8 +66,43 @@ select { width: 100%; margin-top: 6px; padding: 10px; border: 1px solid #cbc7be;
 .stats-panel dd { margin: 4px 0 0; font: 500 1.3rem ui-monospace, "Cascadia Mono", monospace; }
 
 button:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid #e4b455; outline-offset: 2px; }
+input:focus-visible { outline: 3px solid #e4b455; outline-offset: 3px; }
+button:disabled { cursor: not-allowed; opacity: .45; }
+.phrase-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.text-button { padding: 8px 5px; color: #344b44; border: 0; background: transparent; text-decoration: underline; text-underline-offset: 3px; font-size: .83rem; }
+.timing-help, .section-help { color: #626c65; font-size: .8rem; line-height: 1.6; }
+.timing-help { margin: 12px 0 0; font-size: .74rem; }
+.section-help { margin: 10px 0 0; }
+.difficulty-control { margin-top: 22px; }
+.checkbox-label { display: flex; align-items: center; gap: 9px; margin: 20px 0 0; font-size: .88rem; color: #173d35; }
+.checkbox-label input { width: 17px; height: 17px; accent-color: #24564a; }
+.mastery-panel { margin-top: 20px; }
+.mastery-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.attempt-total { font: .85rem ui-monospace, monospace; color: #53625a; }
+.empty-state { padding: 18px; margin-bottom: 0; border: 1px dashed #c9d3cb; border-radius: 10px; color: #58675e; font-size: .88rem; line-height: 1.6; }
+.insight-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin-top: 22px; }
+.insight-grid h3 { margin: 0 0 12px; font-size: .88rem; }
+.insight-grid ul { list-style: none; padding: 0; margin: 0; }
+.insight-grid li { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 9px 0; border-top: 1px solid #dfdbd1; }
+.insight-grid li strong { font: 500 .98rem ui-monospace, monospace; }
+.insight-grid li small { grid-column: 1 / -1; color: #657069; font-size: .72rem; }
+.mastery-details { margin-top: 20px; }
+.mastery-details summary { cursor: pointer; font-size: .85rem; color: #344b44; }
+.table-scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: .8rem; text-align: left; }
+caption { text-align: left; color: #5b675f; margin-bottom: 10px; }
+th, td { padding: 10px 8px; border-bottom: 1px solid #dedbd2; }
+thead th { color: #58665d; font-weight: 600; background: #eeeae1; }
+.progress-footer { display: flex; justify-content: space-between; gap: 24px; align-items: center; padding: 8px 5px 0; }
+.progress-footer .text-button { flex-shrink: 0; }
+.danger-text { color: #9b3e36; }
+.reset-confirmation { margin-top: 16px; padding: 24px; background: #fff7ed; border: 1px solid #c59787; border-radius: 14px; }
+.reset-confirmation h3 { margin-top: 0; font-size: 1rem; }
+.reset-confirmation p { line-height: 1.6; font-size: .88rem; }
+.danger-button { padding: 11px 17px; border: 0; border-radius: 10px; background: #963e35; color: white; font-weight: 600; }
 
 @media (max-width: 860px) {
   .lower-grid { grid-template-columns: 1fr; }
   .app-shell { width: calc(100% - 28px); }
+  .result-row { align-items: flex-start; flex-direction: column; gap: 12px; }
 }

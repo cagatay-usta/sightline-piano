@@ -1,92 +1,111 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Notation } from './components/Notation'
-import { accuracy, applyNoteAttempt, averagePhraseTime, createExercise, INITIAL_SESSION_STATS } from './exercise/exercise'
-import { generatePhrase, type PhraseLength } from './music/generatePhrase'
-import { pitchesForClef, type Clef } from './music/pitches'
+import { MasteryDashboard } from './components/MasteryDashboard'
+import { accuracy, averagePhraseTime, createExercise, presentExercise } from './exercise/exercise'
+import { attemptPractice, seededRandom, startPractice } from './exercise/practice'
+import type { PerformanceEvent } from './exercise/performance'
+import { DIFFICULTY_PROFILES, getDifficulty, isDifficultyId } from './music/difficulty'
+import { pitchLabel } from './music/pitches'
+import { createMastery } from './learning/mastery'
 import { useMidi } from './midi/useMidi'
-import { loadClef, loadPhraseLength, saveClef, savePhraseLength } from './preferences'
+import { loadProgress, saveProgress, type ProgressPreferences } from './storage/progress'
 
 function formatTime(milliseconds: number | null): string {
-  if (milliseconds === null) return '—'
-  return `${(milliseconds / 1000).toFixed(1)}s`
+  return milliseconds === null ? '—' : `${(Math.max(0, milliseconds) / 1000).toFixed(1)}s`
 }
+let phraseSequence = 0
+function nextPhraseId(): string { return `${Date.now().toString(36)}-${++phraseSequence}` }
+function randomSeed(): number { return Math.floor(Math.random() * 4294967296) }
 
 export default function App() {
-  const [clef, setClef] = useState<Clef>(loadClef)
-  const [phraseLength, setPhraseLength] = useState<PhraseLength>(loadPhraseLength)
-  const [phrase, setPhrase] = useState(() => generatePhrase({ clef, length: phraseLength }))
-  const [practice, setPractice] = useState(() => ({
-    exercise: createExercise(),
-    stats: INITIAL_SESSION_STATS,
-  }))
+  const [loaded] = useState(loadProgress)
+  const [practice, setPractice] = useState(() => startPractice(loaded.data.preferences, loaded.data.mastery, nextPhraseId()))
   const [clock, setClock] = useState(() => performance.now())
-  const { exercise, stats } = practice
+  const [storageNotice, setStorageNotice] = useState(loaded.notice)
+  const [resetOpen, setResetOpen] = useState(false)
+  const [resetMessage, setResetMessage] = useState('')
+  const saved = useRef({ preferences: practice.preferences, mastery: practice.mastery })
+  const { preferences, phrase, exercise, stats, mastery } = practice
+  const { clef, difficultyId, phraseLength, adaptive } = preferences
+  const profile = getDifficulty(difficultyId)
+  const allowedPitches = profile.ranges[clef]
 
-  const submitNote = useCallback((midi: number) => {
+  const submitNote = useCallback((note: number, source: PerformanceEvent['source']) => {
+    if (resetOpen) return
+    const now = performance.now()
+    const timestamp = Date.now()
+    setPractice((current) => attemptPractice(current, note, now, timestamp, source))
+    setClock(now)
+  }, [resetOpen])
+  const submitMidi = useCallback((note: number) => submitNote(note, 'midi'), [submitNote])
+  const midi = useMidi(submitMidi)
+
+  const onNotationReady = useCallback(() => {
+    const id = phrase.id
     const now = performance.now()
     setPractice((current) => {
-      const transition = applyNoteAttempt(
-        current.exercise,
-        current.stats,
-        phrase.map((pitch) => pitch.midi),
-        midi,
-        now,
-      )
-      return { exercise: transition.exercise, stats: transition.stats }
+      if (current.phrase.id !== id || current.exercise.startedAt !== null) return current
+      return { ...current, exercise: presentExercise(current.exercise, now) }
     })
-  }, [phrase])
+  }, [phrase.id])
 
-  const midi = useMidi(submitNote)
+  const nextPhrase = (changes: Partial<ProgressPreferences> = {}) => {
+    const id = nextPhraseId()
+    const seed = randomSeed()
+    setPractice((current) => startPractice(
+      { ...current.preferences, ...changes }, current.mastery, id, seededRandom(seed), current.stats,
+    ))
+    setResetMessage('')
+  }
 
-  const startPhrase = useCallback((nextClef = clef, nextLength = phraseLength) => {
-    setPhrase(generatePhrase({ clef: nextClef, length: nextLength }))
-    setPractice((current) => ({ exercise: createExercise(), stats: current.stats }))
-    setClock(performance.now())
-  }, [clef, phraseLength])
+  const restartPhrase = () => {
+    const id = nextPhraseId()
+    setPractice((current) => ({ ...current, phrase: { ...current.phrase, id }, exercise: createExercise() }))
+  }
+
+  const resetProgress = () => {
+    const id = nextPhraseId()
+    const seed = randomSeed()
+    setPractice((current) => startPractice(current.preferences, createMastery(), id, seededRandom(seed)))
+    setResetOpen(false)
+    setResetMessage('Progress cleared for both clefs. Your practice settings were kept.')
+  }
+
+  // Persist after actual progress/settings changes, not during render or initial recovery.
+  useEffect(() => {
+    if (saved.current.preferences === preferences && saved.current.mastery === mastery) return
+    const ok = saveProgress({ version: 1, preferences, mastery })
+    saved.current = { preferences, mastery }
+    setStorageNotice(ok ? null : 'Progress could not be saved. Practice still works, but changes may be lost on reload. Allow browser storage and try another note.')
+  }, [preferences, mastery])
 
   useEffect(() => {
     if (exercise.feedback === 'idle') return
     const feedbackId = exercise.feedbackId
+    const id = phrase.id
     const timeout = window.setTimeout(() => {
-      setPractice((current) => current.exercise.feedbackId === feedbackId
-        ? { ...current, exercise: { ...current.exercise, feedback: 'idle' } }
-        : current)
+      setPractice((current) => current.phrase.id === id && current.exercise.feedbackId === feedbackId
+        ? { ...current, exercise: { ...current.exercise, feedback: 'idle' } } : current)
     }, 650)
     return () => window.clearTimeout(timeout)
-  }, [exercise.feedback, exercise.feedbackId])
+  }, [exercise.feedback, exercise.feedbackId, phrase.id])
 
   useEffect(() => {
-    if (exercise.status !== 'playing') return
+    if (exercise.startedAt === null || exercise.status === 'complete') return
+    setClock(performance.now())
     const interval = window.setInterval(() => setClock(performance.now()), 100)
     return () => window.clearInterval(interval)
-  }, [exercise.status])
+  }, [exercise.startedAt, exercise.status])
 
-  const elapsedMs = exercise.startedAt === null
-    ? null
-    : (exercise.completedAt ?? clock) - exercise.startedAt
-  const expected = exercise.status === 'complete' ? null : phrase[exercise.currentIndex]
-  const averageMs = averagePhraseTime(stats)
-  const allowedPitches = useMemo(() => pitchesForClef(clef), [clef])
-
-  const changeClef = (value: Clef) => {
-    setClef(value)
-    saveClef(value)
-    startPhrase(value, phraseLength)
-  }
-
-  const changeLength = (value: PhraseLength) => {
-    setPhraseLength(value)
-    savePhraseLength(value)
-    startPhrase(clef, value)
-  }
+  const elapsedMs = exercise.startedAt === null ? null : (exercise.completedAt ?? clock) - exercise.startedAt
+  const complete = exercise.status === 'complete'
+  const progressLabel = `${exercise.currentIndex} of ${phrase.notes.length} notes complete`
+  const rangeLabel = `${pitchLabel(allowedPitches[0]!)}–${pitchLabel(allowedPitches[allowedPitches.length - 1]!)}`
 
   return (
     <main className="app-shell">
       <header className="masthead">
-        <div>
-          <p className="eyebrow">Local MIDI practice</p>
-          <h1>Sightline</h1>
-        </div>
+        <div><p className="eyebrow">Local MIDI practice · v0.2</p><h1>Sightline</h1></div>
         <div className={`status-pill status-${midi.status}`} aria-live="polite">
           <span aria-hidden="true" />
           {midi.status === 'connected' ? 'MIDI ready' : midi.status === 'requesting' ? 'Connecting…' : 'MIDI not connected'}
@@ -95,65 +114,51 @@ export default function App() {
 
       <section className="exercise-card" aria-labelledby="exercise-heading">
         <div className="exercise-heading-row">
-          <div>
-            <p className="eyebrow">Current phrase</p>
-            <h2 id="exercise-heading">
-              {exercise.status === 'complete' ? 'Phrase complete' : expected ? `Find ${expected.name}${expected.octave}` : 'Get ready'}
-            </h2>
+          <div><p className="eyebrow">{profile.name} · {clef} · {phrase.notes.length} notes</p>
+            <h2 id="exercise-heading">{complete ? 'Phrase complete' : `Read note ${exercise.currentIndex + 1} of ${phrase.notes.length}`}</h2>
           </div>
-          <div className="phrase-progress" aria-label={`${Math.min(exercise.currentIndex, phrase.length)} of ${phrase.length} notes complete`}>
-            {phrase.map((pitch, index) => (
-              <span key={`${pitch.midi}-${index}`} className={index < exercise.currentIndex ? 'done' : index === exercise.currentIndex && exercise.status !== 'complete' ? 'current' : ''} />
-            ))}
-          </div>
+          <div className="phrase-progress" aria-label={progressLabel}>{phrase.notes.map((pitch, index) => (
+            <span key={`${pitch.midi}-${index}`} className={index < exercise.currentIndex ? 'done' : index === exercise.currentIndex && !complete ? 'current' : ''} />
+          ))}</div>
         </div>
-
-        <Notation phrase={phrase} clef={clef} currentIndex={exercise.currentIndex} complete={exercise.status === 'complete'} feedback={exercise.feedback} />
-
-        <div className="result-row" aria-live="polite">
-          <p className={exercise.feedback === 'incorrect' ? 'wrong-feedback' : ''}>
-            {exercise.status === 'complete'
-              ? `Nicely read in ${formatTime(elapsedMs)}.`
-              : exercise.feedback === 'incorrect'
-                ? `That wasn't ${expected?.name}${expected?.octave}. Stay on this note.`
-                : exercise.status === 'ready'
-                  ? 'Play the highlighted note to start the clock.'
-                  : `${exercise.currentIndex} down, ${phrase.length - exercise.currentIndex} to go.`}
+        <Notation phrase={phrase.notes} clef={clef} currentIndex={exercise.currentIndex} complete={complete} feedback={exercise.feedback} onReady={onNotationReady} />
+        <div className="result-row">
+          <p aria-live="polite" className={exercise.feedback === 'incorrect' ? 'wrong-feedback' : ''}>
+            {complete ? `Phrase read in ${formatTime(elapsedMs)} · ${exercise.errors} incorrect attempt${exercise.errors === 1 ? '' : 's'}.`
+              : exercise.feedback === 'incorrect' ? 'Not quite. Try the marked note again.'
+              : exercise.status === 'ready' ? 'Read the staff and play the note marked NEXT.'
+              : `${exercise.currentIndex} down, ${phrase.notes.length - exercise.currentIndex} to go.`}
           </p>
-          <button className="primary-button" type="button" onClick={() => startPhrase()}>
-            {exercise.status === 'complete' ? 'New phrase' : 'Next phrase'}
-          </button>
+          <div className="phrase-actions">
+            <button className="text-button" type="button" onClick={restartPhrase}>Restart phrase</button>
+            <button className="primary-button" type="button" onClick={() => nextPhrase()}>Next phrase</button>
+          </div>
         </div>
+        <p className="timing-help">Response timing starts when the staff appears. Connect your keyboard first, or restart when ready. No rhythm scoring.</p>
       </section>
 
       <div className="lower-grid">
         <section className="panel controls-panel" aria-labelledby="controls-heading">
-          <p className="eyebrow">Setup</p>
-          <h2 id="controls-heading">Practice controls</h2>
-
+          <p className="eyebrow">Setup</p><h2 id="controls-heading">Practice controls</h2>
+          <label className="difficulty-control">Difficulty profile
+            <select value={difficultyId} onChange={(event) => {
+              const value = event.target.value
+              if (isDifficultyId(value)) nextPhrase({ difficultyId: value, phraseLength: getDifficulty(value).defaultLength })
+            }}>{DIFFICULTY_PROFILES.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+          </label>
+          <p className="section-help">{profile.description} Range: {rangeLabel}. These are exercise settings, not a complete curriculum.</p>
           <div className="control-row">
-            <fieldset>
-              <legend>Clef</legend>
-              <div className="segmented">
-                {(['treble', 'bass'] as const).map((value) => (
-                  <button key={value} type="button" aria-pressed={clef === value} onClick={() => changeClef(value)}>{value}</button>
-                ))}
-              </div>
-            </fieldset>
-            <fieldset>
-              <legend>Phrase length</legend>
-              <div className="segmented">
-                {([4, 8] as const).map((value) => (
-                  <button key={value} type="button" aria-pressed={phraseLength === value} onClick={() => changeLength(value)}>{value} notes</button>
-                ))}
-              </div>
-            </fieldset>
+            <fieldset><legend>Clef</legend><div className="segmented">{(['treble', 'bass'] as const).map((value) => (
+              <button key={value} type="button" aria-pressed={clef === value} onClick={() => nextPhrase({ clef: value })}>{value}</button>
+            ))}</div></fieldset>
+            <fieldset><legend>Phrase length</legend><div className="segmented">{([4, 8] as const).map((value) => (
+              <button key={value} type="button" disabled={!profile.lengths.includes(value)} aria-pressed={phraseLength === value} onClick={() => nextPhrase({ phraseLength: value })}>{value} notes</button>
+            ))}</div></fieldset>
           </div>
-
+          <label className="checkbox-label"><input type="checkbox" checked={adaptive} onChange={(event) => nextPhrase({ adaptive: event.target.checked })} />Adaptive note practice</label>
+          <p className="section-help">Gently revisit missed notes within this profile. All notes remain possible. Changing settings starts a new phrase.</p>
           <div className="midi-block">
-            {!midi.supported ? (
-              <p className="inline-error">Web MIDI is unavailable. Use current Chrome or Edge, or try the practice keys below.</p>
-            ) : (
+            {!midi.supported ? <p className="inline-error">Web MIDI is unavailable. Use current Chrome or Edge on localhost, or try the practice keys below.</p> : (
               <>
                 <div className="midi-action-row">
                   <button className="secondary-button" type="button" onClick={midi.connect} disabled={midi.status === 'requesting'}>
@@ -161,46 +166,48 @@ export default function App() {
                   </button>
                   {midi.status === 'no-inputs' && <span>No MIDI inputs found. Connect a keyboard, then refresh.</span>}
                 </div>
-                {midi.inputs.length > 0 && (
-                  <label>
-                    MIDI input
-                    <select value={midi.selectedInputId} onChange={(event) => midi.setSelectedInputId(event.target.value)}>
-                      {midi.inputs.map((input) => <option key={input.id} value={input.id}>{input.name}</option>)}
-                    </select>
-                  </label>
-                )}
+                {midi.inputs.length > 0 && <label>MIDI input<select value={midi.selectedInputId} onChange={(event) => midi.setSelectedInputId(event.target.value)}>{midi.inputs.map((input) => <option key={input.id} value={input.id}>{input.name}</option>)}</select></label>}
                 {midi.error && <p className="inline-error" role="alert">Could not connect to MIDI: {midi.error}</p>}
               </>
             )}
           </div>
-
           <details className="practice-input">
             <summary>Practice without a MIDI keyboard</summary>
-            <p>These buttons send notes through the same exercise path as a connected keyboard.</p>
-            <div className="note-buttons">
-              {allowedPitches.map((pitch) => (
-                <button key={pitch.midi} type="button" onClick={() => submitNote(pitch.midi)} aria-label={`Play ${pitch.name} ${pitch.octave}`}>
-                  {pitch.name}<small>{pitch.octave}</small>
-                </button>
-              ))}
-            </div>
+            <p>Test keys use the same scoring and saved progress as MIDI. For physical keyboard learning, use your MIDI controller.</p>
+            <div className="note-buttons">{allowedPitches.map((pitch) => <button key={pitch.midi} type="button" onClick={() => submitNote(pitch.midi, 'manual')} aria-label={`Play ${pitch.name} ${pitch.octave}`}>{pitch.name}<small>{pitch.octave}</small></button>)}</div>
           </details>
         </section>
 
         <section className="panel stats-panel" aria-labelledby="stats-heading">
-          <p className="eyebrow">This session</p>
-          <h2 id="stats-heading">Practice snapshot</h2>
+          <p className="eyebrow">This session</p><h2 id="stats-heading">Practice snapshot</h2>
           <dl>
             <div><dt>Phrases</dt><dd>{stats.phrasesCompleted}</dd></div>
-            <div><dt>Accuracy</dt><dd>{accuracy(stats).toFixed(0)}%</dd></div>
+            <div><dt>Accuracy</dt><dd>{stats.notesAttempted ? `${accuracy(stats).toFixed(0)}%` : '—'}</dd></div>
             <div><dt>Attempts</dt><dd>{stats.notesAttempted}</dd></div>
             <div><dt>Correct</dt><dd>{stats.correctNotes}</dd></div>
             <div><dt>Incorrect</dt><dd>{stats.incorrectNotes}</dd></div>
             <div><dt>Phrase time</dt><dd>{formatTime(elapsedMs)}</dd></div>
-            <div><dt>Average time</dt><dd>{formatTime(averageMs)}</dd></div>
+            <div><dt>Average time</dt><dd>{formatTime(averagePhraseTime(stats))}</dd></div>
+            <div><dt>Last response</dt><dd>{exercise.lastEvent?.correct ? formatTime(exercise.lastEvent.responseLatencyMs) : '—'}</dd></div>
           </dl>
+          <p className="section-help">Session totals reset on reload. Note and interval progress below stays saved locally.</p>
         </section>
       </div>
+
+      <MasteryDashboard mastery={mastery} clef={clef} />
+      <footer className="progress-footer">
+        <div aria-live="polite">
+          {storageNotice && <p className="inline-error" role="status">{storageNotice}</p>}
+          {resetMessage && <p>{resetMessage}</p>}
+          <p className="section-help">Only preferences and aggregate mastery are saved in this browser. No account, cloud sync, or raw performance history.</p>
+        </div>
+        <button className="text-button danger-text" type="button" onClick={() => setResetOpen(true)}>Reset progress</button>
+      </footer>
+      {resetOpen && <div className="reset-confirmation" role="alertdialog" aria-labelledby="reset-title" aria-describedby="reset-description" onKeyDown={(event) => { if (event.key === 'Escape') setResetOpen(false) }}>
+        <h3 id="reset-title">Reset all practice progress?</h3>
+        <p id="reset-description">Delete saved note and interval statistics for both clefs and clear this session. Your clef, difficulty, phrase length, and adaptive setting will be kept. This cannot be undone.</p>
+        <div className="phrase-actions"><button className="secondary-button" type="button" autoFocus onClick={() => setResetOpen(false)}>Cancel</button><button className="danger-button" type="button" onClick={resetProgress}>Delete practice progress</button></div>
+      </div>}
     </main>
   )
 }
